@@ -173,4 +173,4 @@ and reduces eye strain.
 
 ## 👨‍💻 Author
 
-A Ramesh
+A RAMESH KUMARAN
