@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Adaptive Lamp Dashboard</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <style>
+    body { 
+      font-family: Arial; 
+      margin: 15px; 
+      background: #f5f6fa; 
+    }
+    
+    h1 { margin-bottom: 8px; font-size: 22px; }
+
+    nav { margin-bottom: 10px; }
+
+    button {
+      margin-right: 8px;
+      padding: 6px 12px;
+      font-size: 12px;
+      cursor: pointer;
+      border: none;
+      background: #3498db;
+      color: white;
+      border-radius: 4px;
+    }
+
+    button:hover { background: #2980b9; }
+
+    /* 🔥 COMPACT GRID */
+    .row {
+      display: flex;
+      gap: 10px;
+      margin-top: 10px;
+    }
+
+    .card {
+      flex: 1;
+      padding: 10px;
+      border-radius: 6px;
+      background: white;
+      box-shadow: 0 1px 5px rgba(0,0,0,0.1);
+      min-height: 120px;
+    }
+
+    .card h3 {
+      font-size: 14px;
+      margin-bottom: 5px;
+    }
+
+    .full-width {
+      margin-top: 10px;
+      padding: 10px;
+      border-radius: 6px;
+      background: white;
+      box-shadow: 0 1px 5px rgba(0,0,0,0.1);
+    }
+
+    canvas { 
+      max-width: 100%; 
+      height: 250px !important; /* 🔥 LIMIT HEIGHT */
+    }
+
+    #gauge {
+      height: 150px !important;
+    }
+
+    .safe { color: green; font-weight: bold; font-size: 14px; }
+    .danger { color: red; font-weight: bold; font-size: 14px; }
+  </style>
+</head>
+
+<body>
+
+<h1>💡 Adaptive Lamp Dashboard</h1>
+
+<!-- 🔥 NAVBAR -->
+<nav>
+  <button onclick="setChart('line')">Line</button>
+  <button onclick="setChart('bar')">Bar</button>
+  <button onclick="setChart('pie')">Pie</button>
+  <button onclick="setChart('histogram')">Histogram</button>
+  <button onclick="setChart('bubble')">Bubble</button>
+</nav>
+
+<!-- 🔥 SMALL TOP CARDS -->
+<div class="row">
+
+  <!-- 🧠 Prediction -->
+  <div class="card">
+    <h3>🧠 Prediction</h3>
+    <p id="prediction">Loading...</p>
+  </div>
+
+  <!-- 🎯 Score -->
+  <div class="card">
+    <h3>🎯 Score</h3>
+    <canvas id="gauge"></canvas>
+  </div>
+
+</div>
+
+<!-- 📊 CHART -->
+<div class="full-width">
+  <h3>📊 Visualization</h3>
+  <canvas id="chart"></canvas>
+</div>
+
+<script>
+let chartType = "line";
+let alertShown = false;
+
+// -------------------------
+// MAIN CHART
+// -------------------------
+const ctx = document.getElementById('chart').getContext('2d');
+
+let chart = new Chart(ctx, {
+  type: 'line',
+  data: { labels: [], datasets: [] },
+  options: {
+    responsive: true,
+    animation: false
+  }
+});
+
+// -------------------------
+// GAUGE
+// -------------------------
+const gaugeCtx = document.getElementById('gauge').getContext('2d');
+
+let gauge = new Chart(gaugeCtx, {
+  type: 'doughnut',
+  data: {
+    labels: ['Risk', 'Safe'],
+    datasets: [{
+      data: [0, 100]
+    }]
+  },
+  options: {
+    circumference: 180,
+    rotation: 270,
+    cutout: '70%',
+    plugins: { legend: { display: false } }
+  }
+});
+
+// Switch chart
+function setChart(type) {
+  chartType = type;
+}
+
+// -------------------------
+// UPDATE DATA
+// -------------------------
+async function updateData() {
+  let res = await fetch('/get-data');
+  let data = await res.json();
+
+  if (data.length === 0) return;
+
+  let labels = data.map(d => d.timestamp);
+  let distance = data.map(d => d.distance);
+  let brightness = data.map(d => d.brightness);
+  let temp = data.map(d => d.temperature);
+
+  chart.data.labels = labels;
+
+  if (chartType === "line") {
+    chart.config.type = 'line';
+    chart.data.datasets = [
+      { label: 'Distance', data: distance },
+      { label: 'Brightness', data: brightness }
+    ];
+  }
+
+  else if (chartType === "bar") {
+    chart.config.type = 'bar';
+    chart.data.datasets = [
+      { label: 'Distance', data: distance },
+      { label: 'Brightness', data: brightness }
+    ];
+  }
+
+  else if (chartType === "pie") {
+    chart.config.type = 'pie';
+    let counts = { warm:0, neutral:0, cool:0 };
+    temp.forEach(t => counts[t]++);
+    chart.data.labels = Object.keys(counts);
+    chart.data.datasets = [{ data: Object.values(counts) }];
+  }
+
+  else if (chartType === "histogram") {
+    chart.config.type = 'bar';
+    let bins = [0,0,0];
+    distance.forEach(d => {
+      if (d > 2800) bins[0]++;
+      else if (d > 1400) bins[1]++;
+      else bins[2]++;
+    });
+    chart.data.labels = ['Close','Medium','Far'];
+    chart.data.datasets = [{ data: bins }];
+  }
+
+  else if (chartType === "bubble") {
+    chart.config.type = 'bubble';
+    chart.data.datasets = [{
+      data: data.map(d => ({ x: d.distance, y: d.brightness, r: 6 }))
+    }];
+  }
+
+  chart.update();
+
+  // -------------------------
+  // PREDICTION
+  // -------------------------
+  let pred = await fetch('/predict');
+  let p = await pred.json();
+
+  let predictionText = p.text;
+  let score = p.score;
+
+  let predElement = document.getElementById("prediction");
+
+  // Update gauge
+  gauge.data.datasets[0].data = [score, 100 - score];
+  gauge.update();
+
+  // 🔥 ALERT ONLY > 50%
+  if (score > 50) {
+    predElement.className = "danger";
+
+    if (!alertShown) {
+      alert("⚠️ Eye strain risk detected!\n\nPlease adjust posture and lighting.");
+      alertShown = true;
+    }
+
+  } else {
+    predElement.className = "safe";
+    alertShown = false;
+  }
+
+  predElement.innerText = predictionText + " (" + score + "%)";
+}
+
+setInterval(updateData, 2000);
+</script>
+
+</body>
+</html>
